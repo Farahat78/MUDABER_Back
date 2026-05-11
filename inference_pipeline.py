@@ -91,8 +91,10 @@ class PriceForecastingPipeline:
 
         new_df = pd.read_csv(path)
 
-        # ── basic cleaning ──
+          # ── basic cleaning ──
         new_df['date'] = pd.to_datetime(new_df.get('date'), errors='coerce')
+        new_df = new_df.dropna(subset=['date'])
+        
         new_df['price'] = pd.to_numeric(new_df.get('price'), errors='coerce')
         new_df['discount'] = pd.to_numeric(new_df.get('discount'), errors='coerce').fillna(0)
 

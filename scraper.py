@@ -6,10 +6,6 @@ import os
 import re
 from datetime import datetime, timezone, timedelta
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
-try:
-    from playwright_stealth import stealth_sync
-except ImportError:
-    stealth_sync = None
 
 # Force UTF-8 output on Windows to avoid UnicodeEncodeError on cp1252 terminal
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -56,15 +52,10 @@ def random_mouse_move(page):
 
 # ─── Browser launch ──────────────────────────────────────────────────────────
 def launch_browser(p):
-    browser = p.chromium.launch(
+    browser = p.firefox.launch(
         headless=True,
         args=[
-            "--disable-blink-features=AutomationControlled",
             "--start-maximized",
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-infobars",
-            "--disable-extensions",
         ],
     )
 
@@ -72,11 +63,7 @@ def launch_browser(p):
         viewport=None,
         locale="ar-EG",
         timezone_id="Africa/Cairo",
-        user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
         extra_http_headers={
             "Accept-Language": "ar-EG,ar;q=0.9,en-US;q=0.8,en;q=0.7",
             "Accept": (
@@ -87,14 +74,6 @@ def launch_browser(p):
     )
 
     page = context.new_page()
-
-    if stealth_sync:
-        stealth_sync(page)
-    else:
-        # Fallback if stealth is not installed
-        page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-        """)
 
     return browser, context, page
 

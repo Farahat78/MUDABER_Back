@@ -23,6 +23,9 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install Playwright browsers
+        run: python -m playwright install chromium
+
       - name: Run pipeline
         run: python run_pipeline.py
 

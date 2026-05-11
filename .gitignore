@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Env
+.env
+
+# Logs
+logs/
+
+# Training data (large, do NOT commit)
+data/training/
+data/scraped/
+
+# ⚠️ IMPORTANT: These files ARE committed (they're the data contract)
+# data/latest_products.csv   ← COMMIT THIS
+# data/predictions.csv       ← COMMIT THIS
+
+# Model files (large binary — use Git LFS or store separately)
+models/*.pkl
+
+# Temp
+data/_tmp_*
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,106 @@
+# Configuration for Price Forecasting Pipeline
+
+# Data settings
+data:
+  base_dir: "."
+  unified_dataset: "unified_dataset.csv"
+  scraped_prefix: "carrefour_products-"
+  price_state: "price_state.csv"
+  label_encoders: "label_encoders.pkl"
+  predictions_output: "predictions_latest.csv"
+  versioned_predictions: "predictions_{timestamp}.csv"
+
+# Scraper settings
+scraper:
+  module: "scraper.scraper"
+  output_pattern: "carrefour_products-{date}.csv"
+  timeout: 600  # seconds
+  retry_attempts: 3
+  retry_delay: 10  # seconds
+
+# Preprocessing settings
+preprocessing:
+  features:
+    - "price_lag_1"
+    - "price_lag_2"
+    - "price_lag_3"
+    - "rolling_mean_2"
+    - "rolling_mean_3"
+    - "category_avg_price"
+    - "category_avg_price_week"
+    - "discount"
+    - "price_change_frequency"
+    - "price_momentum"
+    - "price_vs_category"
+    - "trend_indicator"
+    - "main_category_encoded"
+    - "sub_category_encoded"
+    - "week_number"
+    - "month"
+    - "day_of_week"
+  target: "price_next"
+
+# Training settings
+training:
+  retrain_threshold: 10
+  mode: "full"  # "full" or "incremental" (if model supports)
+  test_size: 0.2
+  random_state: 42
+  models:
+    xgb:
+      name: "XGBoost"
+      params:
+        n_estimators: 500
+        learning_rate: 0.05
+        max_depth: 6
+        n_jobs: -1
+      incremental_support: false
+    lgb:
+      name: "LightGBM"
+      params:
+        n_estimators: 500
+        learning_rate: 0.05
+        max_depth: 6
+        n_jobs: -1
+        verbose: -1
+      incremental_support: false
+    cat:
+      name: "CatBoost"
+      params:
+        iterations: 500
+        learning_rate: 0.05
+        depth: 6
+        verbose: false
+      incremental_support: false
+
+# Prediction settings
+prediction:
+  strategy: "ensemble"  # "ensemble" or "best_model"
+  ensemble_method: "average"  # "average" or "weighted"
+  threshold: 1.0  # For trend classification
+
+# Model versioning
+versioning:
+  version_dir: "model_versions"
+  metadata_file: "metadata.json"
+  keep_last_n_versions: 5
+
+# Logging
+logging:
+  level: "INFO"
+  log_dir: "logs"
+  per_run_log: true
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Scheduler
+scheduler:
+  type: "windows"  # "windows", "apscheduler", "cron"
+  day: "friday"
+  time: "01:00"
+  task_name: "CarrefourPricePrediction_Weekly"
+
+# Retry settings
+retry:
+  max_attempts: 3
+  delay: 5  # seconds
+  backoff_factor: 2

@@ -132,27 +132,18 @@ class PriceForecastingPipeline:
         combined_df = combined_df.sort_values(['product_name_clean', 'date']).reset_index(drop=True)
 
         # ── LAGS ──
-        def create_lags(g):
-            g = g.copy().sort_values('date')
-            for lag in [1, 2, 3]:
-                g[f'price_lag_{lag}'] = g['price'].shift(lag)
-            g['rolling_mean_2'] = g['price'].shift(1).rolling(2, min_periods=1).mean()
-            g['rolling_mean_3'] = g['price'].shift(1).rolling(3, min_periods=1).mean()
-            return g
+        # Use vectorized groupby instead of apply() to avoid pandas 3.x include_groups deprecation/removal
+        grouper = combined_df.groupby('product_name_clean')['price']
 
-        # Apply lag features — compatible with pandas 2.x and 3.x
-        try:
-            combined_df = combined_df.groupby(
-                'product_name_clean', group_keys=False
-            ).apply(create_lags, include_groups=True)
-        except TypeError:
-            # pandas < 2.2 doesn't support include_groups
-            combined_df = combined_df.groupby(
-                'product_name_clean', group_keys=False
-            ).apply(create_lags)
-        combined_df = combined_df.reset_index(drop=True)
-        # Verify column survived the groupby
-        assert 'product_name_clean' in combined_df.columns, "product_name_clean lost after groupby"
+        for lag in [1, 2, 3]:
+            combined_df[f'price_lag_{lag}'] = grouper.shift(lag)
+
+        def calc_rolling_2(x): return x.rolling(2, min_periods=1).mean()
+        def calc_rolling_3(x): return x.rolling(3, min_periods=1).mean()
+
+        lag_1_grouper = combined_df.groupby('product_name_clean')['price_lag_1']
+        combined_df['rolling_mean_2'] = lag_1_grouper.transform(calc_rolling_2)
+        combined_df['rolling_mean_3'] = lag_1_grouper.transform(calc_rolling_3)
 
         # ── ENCODING ──
         combined_df['main_category'] = combined_df['main_category'].fillna("")

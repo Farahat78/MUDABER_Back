@@ -51,7 +51,7 @@ def random_mouse_move(page):
 # ─── Browser launch ──────────────────────────────────────────────────────────
 def launch_browser(p):
     browser = p.chromium.launch(
-        headless=False,
+        headless=True,
         args=[
             "--disable-blink-features=AutomationControlled",
             "--start-maximized",

@@ -4,7 +4,7 @@ import time
 import csv
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 # Force UTF-8 output on Windows to avoid UnicodeEncodeError on cp1252 terminal
@@ -19,9 +19,11 @@ scraped_dir = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "data", "scraped"
 )
 os.makedirs(scraped_dir, exist_ok=True)
+# Egypt timezone (UTC+3)
+egypt_tz = timezone(timedelta(hours=3))
 OUTPUT_FILE = os.path.join(
     scraped_dir,
-    f"carrefour_products-{datetime.now().strftime('%Y-%m-%d')}.csv"
+    f"carrefour_products-{datetime.now(egypt_tz).strftime('%Y-%m-%d')}.csv"
 )
 
 # ── Updated selector: every product page link uses /p/ in the href ──
@@ -59,6 +61,7 @@ def launch_browser(p):
             "--disable-dev-shm-usage",
             "--disable-infobars",
             "--disable-extensions",
+            "--disable-http2",  # Bypass ERR_HTTP2_PROTOCOL_ERROR
         ],
     )
 

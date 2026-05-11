@@ -74,9 +74,19 @@ def run_scraping() -> Optional[str]:
         output_path = scraper.OUTPUT_FILE
 
         if output_path and os.path.exists(output_path):
-            # Copy to canonical latest_products.csv
+            import pandas as pd
+            try:
+                df = pd.read_csv(output_path)
+                if len(df) == 0:
+                    logger.error("Scraped file is empty (no products). Aborting update to avoid wiping latest_products.csv.")
+                    return None
+            except Exception as e:
+                logger.error(f"Failed to read scraped file: {e}")
+                return None
+
+            # Copy to canonical latest_products.csv only if it has data
             shutil.copy2(output_path, CANONICAL_PRODUCTS)
-            logger.info(f"Scraping done: {output_path}")
+            logger.info(f"Scraping done: {output_path} ({len(df)} products)")
             logger.info(f"Canonical products updated: {CANONICAL_PRODUCTS}")
             return output_path
         else:

@@ -95,10 +95,10 @@ class PriceForecastingPipeline:
 
         new_df = pd.read_csv(path)
 
-          # ── basic cleaning ──
+        # ── basic cleaning ──
         new_df['date'] = pd.to_datetime(new_df.get('date'), errors='coerce')
         new_df = new_df.dropna(subset=['date'])
-        
+
         new_df['price'] = pd.to_numeric(new_df.get('price'), errors='coerce')
         new_df['discount'] = pd.to_numeric(new_df.get('discount'), errors='coerce').fillna(0)
 
@@ -106,7 +106,7 @@ class PriceForecastingPipeline:
             if col not in new_df.columns:
                 new_df[col] = ""
 
-        # ── SAFE product_name_clean ──
+        # ── build product_name_clean for new data ──
         new_df['product_name_clean'] = new_df['product_name'].apply(
             lambda x: re.sub(r'\s+', ' ', str(x).lower().strip())
         )
@@ -116,15 +116,34 @@ class PriceForecastingPipeline:
 
         if os.path.exists(state_path):
             hist = pd.read_csv(state_path)
-            # ── CRITICAL: convert date to datetime before concat ──
+
+            # Convert date to datetime BEFORE concat
             hist['date'] = pd.to_datetime(hist['date'], errors='coerce')
+
+            # Ensure required columns exist in hist
+            for col in ['main_category', 'sub_category', 'product_name']:
+                if col not in hist.columns:
+                    hist[col] = ""
+
+            # Rebuild product_name_clean in hist — always, to handle missing/NaN values
+            hist['product_name_clean'] = hist.get(
+                'product_name', pd.Series("", index=hist.index)
+            ).apply(lambda x: re.sub(r'\s+', ' ', str(x).lower().strip()))
+
             combined_df = pd.concat([hist, new_df], ignore_index=True)
         else:
             combined_df = new_df.copy()
 
         # ── safety cleaning ──
-        # Re-ensure date is datetime on the full combined frame (handles any stragglers)
+        # Re-ensure date is datetime on the full combined frame
         combined_df['date'] = pd.to_datetime(combined_df['date'], errors='coerce')
+
+        # Final safety: fill any remaining NaN in product_name_clean
+        combined_df['product_name_clean'] = combined_df['product_name_clean'].fillna("unknown")
+        combined_df.loc[
+            combined_df['product_name_clean'].str.strip() == "", 'product_name_clean'
+        ] = "unknown"
+
         combined_df = combined_df.dropna(subset=['price', 'date'])
         combined_df = combined_df.sort_values(['product_name_clean', 'date']).reset_index(drop=True)
 
@@ -133,13 +152,17 @@ class PriceForecastingPipeline:
             g = g.sort_values('date')
             for lag in [1, 2, 3]:
                 g[f'price_lag_{lag}'] = g['price'].shift(lag)
-
             g['rolling_mean_2'] = g['price'].shift(1).rolling(2, min_periods=1).mean()
             g['rolling_mean_3'] = g['price'].shift(1).rolling(3, min_periods=1).mean()
-
             return g
 
-        combined_df = combined_df.groupby('product_name_clean', group_keys=False).apply(create_lags)
+        # pandas 3.x: groupby().apply() may promote the group key to the index — always reset
+        combined_df = (
+            combined_df
+            .groupby('product_name_clean', group_keys=False)
+            .apply(create_lags)
+            .reset_index(drop=True)
+        )
 
         # ── ENCODING ──
         combined_df['main_category'] = combined_df['main_category'].fillna("")
@@ -149,7 +172,7 @@ class PriceForecastingPipeline:
             with open(f"{self.model_dir}/label_encoders.pkl", "rb") as f:
                 self.label_encoders = pickle.load(f)
 
-            # Apply saved encoders; map unseen labels to 0 gracefully
+            # Apply saved encoders; map unseen labels gracefully to first known class
             def safe_transform(encoder, series):
                 known = set(encoder.classes_)
                 mapped = series.apply(lambda x: x if x in known else encoder.classes_[0])
@@ -177,7 +200,7 @@ class PriceForecastingPipeline:
         combined_df['month'] = combined_df['date'].dt.month
         combined_df['day_of_week'] = combined_df['date'].dt.dayofweek
 
-        # ── safe features ──
+        # ── derived features ──
         combined_df['category_avg_price'] = combined_df.groupby('main_category')['price'].transform('mean')
         combined_df['category_avg_price_week'] = combined_df.groupby(
             ['main_category', 'week_number']
@@ -190,10 +213,9 @@ class PriceForecastingPipeline:
         combined_df['price_vs_category'] = combined_df['price_lag_1'] - combined_df['category_avg_price']
         combined_df['trend_indicator'] = combined_df['price_lag_1'] - combined_df['rolling_mean_3']
 
-        # ❌ FIX IMPORTANT: no filtering to single date
         processed = combined_df.copy()
 
-        # ── SAFE FEATURE FIX ──
+        # ── ensure all feature columns exist ──
         for col in self.feature_columns:
             if col not in processed.columns:
                 processed[col] = 0

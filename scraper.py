@@ -6,6 +6,10 @@ import os
 import re
 from datetime import datetime, timezone, timedelta
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+try:
+    from playwright_stealth import stealth_sync
+except ImportError:
+    stealth_sync = None
 
 # Force UTF-8 output on Windows to avoid UnicodeEncodeError on cp1252 terminal
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
@@ -61,7 +65,6 @@ def launch_browser(p):
             "--disable-dev-shm-usage",
             "--disable-infobars",
             "--disable-extensions",
-            "--disable-http2",  # Bypass ERR_HTTP2_PROTOCOL_ERROR
         ],
     )
 
@@ -85,15 +88,13 @@ def launch_browser(p):
 
     page = context.new_page()
 
-    # Hide automation signals
-    page.add_init_script("""
-        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-        Object.defineProperty(navigator, 'languages', { get: () => ['ar-EG', 'ar', 'en-US', 'en'] });
-        Object.defineProperty(navigator, 'plugins', { get: () => [1,2,3,4,5] });
-        window.chrome = { runtime: {} };
-        Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
-        Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
-    """)
+    if stealth_sync:
+        stealth_sync(page)
+    else:
+        # Fallback if stealth is not installed
+        page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        """)
 
     return browser, context, page
 

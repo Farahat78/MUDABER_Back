@@ -3,6 +3,7 @@
 
 # Web scraping
 playwright>=1.43.0
+playwright-stealth>=1.0.6
 
 # Data
 pandas>=2.0.0

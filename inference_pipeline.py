@@ -83,10 +83,14 @@ class PriceForecastingPipeline:
     def preprocess_data(self, new_data_path):
         print("[3] Preprocessing...")
 
-        path = os.path.join(self.model_dir, new_data_path)
+        # Support both absolute paths and paths relative to model_dir
+        if os.path.isabs(new_data_path):
+            path = new_data_path
+        else:
+            path = os.path.join(self.model_dir, new_data_path)
 
         if not os.path.exists(path):
-            print("    File not found!")
+            print(f"    File not found: {path}")
             return pd.DataFrame()
 
         new_df = pd.read_csv(path)
@@ -112,11 +116,15 @@ class PriceForecastingPipeline:
 
         if os.path.exists(state_path):
             hist = pd.read_csv(state_path)
+            # ── CRITICAL: convert date to datetime before concat ──
+            hist['date'] = pd.to_datetime(hist['date'], errors='coerce')
             combined_df = pd.concat([hist, new_df], ignore_index=True)
         else:
             combined_df = new_df.copy()
 
         # ── safety cleaning ──
+        # Re-ensure date is datetime on the full combined frame (handles any stragglers)
+        combined_df['date'] = pd.to_datetime(combined_df['date'], errors='coerce')
         combined_df = combined_df.dropna(subset=['price', 'date'])
         combined_df = combined_df.sort_values(['product_name_clean', 'date']).reset_index(drop=True)
 
@@ -140,6 +148,19 @@ class PriceForecastingPipeline:
         if 'label_encoders.pkl' in os.listdir(self.model_dir):
             with open(f"{self.model_dir}/label_encoders.pkl", "rb") as f:
                 self.label_encoders = pickle.load(f)
+
+            # Apply saved encoders; map unseen labels to 0 gracefully
+            def safe_transform(encoder, series):
+                known = set(encoder.classes_)
+                mapped = series.apply(lambda x: x if x in known else encoder.classes_[0])
+                return encoder.transform(mapped)
+
+            combined_df['main_category_encoded'] = safe_transform(
+                self.label_encoders['main'], combined_df['main_category']
+            )
+            combined_df['sub_category_encoded'] = safe_transform(
+                self.label_encoders['sub'], combined_df['sub_category']
+            )
         else:
             self.label_encoders['main'] = LabelEncoder()
             self.label_encoders['sub'] = LabelEncoder()

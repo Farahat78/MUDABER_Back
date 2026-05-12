@@ -29,20 +29,34 @@ jobs:
       - name: Run pipeline
         run: python run_pipeline.py
 
+      - name: Commit backend data changes
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add data/scraped/*.csv
+          git add data/latest_products.csv
+          git add data/predictions.csv
+          git commit -m "Auto-update scraping history and results [backend]" || echo "No changes"
+          git push origin main
+
       - name: Clone frontend repo
         run: |
          git clone https://x-access-token:${{ secrets.FRONTEND_TOKEN }}@github.com/Farahat78/MUDABER.git frontend
 
-      - name: Copy updated data
+      - name: Copy updated data to frontend
         run: |
+          # Remove old files first as requested
+          rm -f frontend/data/latest_products.csv
+          rm -f frontend/data/predictions.csv
+          # Copy new files
           cp data/latest_products.csv frontend/data/
           cp data/predictions.csv frontend/data/
 
-      - name: Push updated files
+      - name: Push updated files to frontend
         run: |
           cd frontend
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add data/
-          git commit -m "Auto update data files" || echo "No changes"
+          git commit -m "Update products and predictions [automated]" || echo "No changes"
           git push

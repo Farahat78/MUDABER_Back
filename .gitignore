@@ -11,7 +11,8 @@ logs/
 
 # Training data (large, do NOT commit)
 data/training/
-data/scraped/
+# data/scraped/ (Now keeping history in backend)
+# data/scraped/
 
 # ⚠️ IMPORTANT: These files ARE committed (they're the data contract)
 # data/latest_products.csv   ← COMMIT THIS

@@ -52,7 +52,7 @@ def random_mouse_move(page):
 
 # ─── Browser launch ──────────────────────────────────────────────────────────
 def launch_browser(p):
-    browser = p.firefox.launch(
+    browser = p.chromium.launch(
         headless=True,
         args=[
             "--start-maximized",
@@ -63,7 +63,7 @@ def launch_browser(p):
         viewport=None,
         locale="ar-EG",
         timezone_id="Africa/Cairo",
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         extra_http_headers={
             "Accept-Language": "ar-EG,ar;q=0.9,en-US;q=0.8,en;q=0.7",
             "Accept": (

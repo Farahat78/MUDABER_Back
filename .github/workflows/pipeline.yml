@@ -5,60 +5,106 @@ on:
   schedule:
     - cron: '0 0 * * 0'
 
+concurrency:
+  group: mudaber-backend-pipeline
+  cancel-in-progress: true
+
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
+
     permissions:
       contents: write
 
     steps:
+      # =========================
+      # Checkout Backend Repo
+      # =========================
       - name: Checkout backend repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
+      # =========================
+      # Setup Python
+      # =========================
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.14'
+          python-version: '3.12'
 
+      # =========================
+      # Install Dependencies
+      # =========================
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # =========================
+      # Install Playwright
+      # =========================
       - name: Install Playwright browsers
-        run: python -m playwright install firefox
+        run: |
+          python -m playwright install chromium
+          python -m playwright install-deps
 
+      # =========================
+      # Run Pipeline
+      # =========================
       - name: Run pipeline
         run: python run_pipeline.py
 
+      # =========================
+      # Commit Backend Changes
+      # =========================
       - name: Commit backend data changes
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add data/scraped/*.csv
-          git add data/latest_products.csv
-          git add data/predictions.csv
-          git commit -m "Auto-update scraping history and results [backend]" || echo "No changes"
+
+          git add data/
+
+          git commit -m "Auto-update scraping history and results [backend]" || echo "No changes to commit"
+
+          git pull --rebase origin main
+
           git push origin main
 
+      # =========================
+      # Clone Frontend Repo
+      # =========================
       - name: Clone frontend repo
         run: |
-         git clone https://x-access-token:${{ secrets.FRONTEND_TOKEN }}@github.com/Farahat78/MUDABER.git frontend
+          git clone https://x-access-token:${{ secrets.FRONTEND_TOKEN }}@github.com/Farahat78/MUDABER.git frontend
 
+      # =========================
+      # Copy Updated Files
+      # =========================
       - name: Copy updated data to frontend
         run: |
-          # Remove old files first as requested
+          mkdir -p frontend/data
+
           rm -f frontend/data/latest_products.csv
           rm -f frontend/data/predictions.csv
-          # Copy new files
+
           cp data/latest_products.csv frontend/data/
           cp data/predictions.csv frontend/data/
 
+      # =========================
+      # Push Frontend Changes
+      # =========================
       - name: Push updated files to frontend
         run: |
           cd frontend
+
           git config user.name "github-actions"
           git config user.email "actions@github.com"
+
           git add data/
-          git commit -m "Update products and predictions [automated]" || echo "No changes"
-          git push
+
+          git commit -m "Update products and predictions [automated]" || echo "No changes to commit"
+
+          git pull --rebase origin main
+
+          git push origin main

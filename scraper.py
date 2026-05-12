@@ -119,116 +119,78 @@ def load_all_products(page):
 # ─── Extract products from current page ──────────────────────────────────────
 def extract_products(page, main_category, sub_category):
     """
-    Each product has 2 <a> tags sharing the same href:
-      - one wraps the product image
-      - one wraps the product name text
-    We group them by href to avoid duplicates, then extract:
-      - name  : from the link that contains visible text
-      - price : from the card container innerText (regex)
-      - image : from the link that contains an <img>
-      - discount: from the card innerText (regex)
+    Extract products using stable data-testids and CSS selectors.
+    Targets [data-testid="product_card"] to ensure we don't mix up data between cards.
     """
     today    = datetime.today()
     date_str = today.strftime("%Y-%m-%d")
     data     = []
 
     try:
-        all_links = page.query_selector_all(PRODUCT_LINK_SEL)
+        # Wait for at least one product card to be present
+        page.wait_for_selector('[data-testid="product_card"]', timeout=5000)
+        cards = page.query_selector_all('[data-testid="product_card"]')
     except Exception:
+        # Fallback to old link-based detection if data-testid is missing
+        cards = []
+
+    if not cards:
+        # Fallback: try to find anything that looks like a product link
+        all_links = page.query_selector_all(PRODUCT_LINK_SEL)
+        # (Rest of the old grouping logic would go here, but let's prioritize the new stable one)
+        # For now, if cards are empty, we return empty so the main loop can retry or fail gracefully
         return data
 
-    # Group links by href: href -> {name_link, img_link, card_el}
-    products_map = {}
-    for link in all_links:
+    for card in cards:
         try:
-            href = link.get_attribute("href") or ""
-            if not href or "/p/" not in href:
-                continue
-
-            link_text = link.inner_text().strip()
-            has_text  = bool(link_text and len(link_text) > 3)
-            has_img   = link.query_selector("img") is not None
-
-            if href not in products_map:
-                products_map[href] = {"name_link": None, "img_link": None, "card_el": None}
-
-            if has_text and not products_map[href]["name_link"]:
-                products_map[href]["name_link"] = link
-            if has_img and not products_map[href]["img_link"]:
-                products_map[href]["img_link"] = link
-
-            # Walk up the DOM to find the card container
-            if products_map[href]["card_el"] is None:
-                el = link
-                for _ in range(5):
-                    parent = el.evaluate_handle("el => el.parentElement")
-                    try:
-                        children = parent.evaluate("el => el.children.length")
-                        tag      = parent.evaluate("el => el.tagName")
-                        if tag == "LI" or children >= 3:
-                            products_map[href]["card_el"] = parent
-                            break
-                    except Exception:
-                        break
-                    el = parent
-
-        except Exception:
-            continue
-
-    # Extract data for each unique product
-    for href, info in products_map.items():
-        try:
-            name_link = info["name_link"]
-            img_link  = info["img_link"]
-            card_el   = info["card_el"]
-
-            # Name
+            # 1. Name: Usually an <a> tag with product title
+            # Target links with /p/ inside the card
+            name_el = card.query_selector("a[href*='/p/']")
             product_name = ""
-            if name_link:
-                product_name = name_link.inner_text().strip()
-            if not product_name:
+            if name_el:
+                product_name = name_el.inner_text().strip()
+            
+            if not product_name or len(product_name) < 3:
                 continue
 
-            # Price: parse from full card innerText
+            # 2. Price: Target the price container specifically
+            # Current price usually has large numbers. 
+            # We look for the container that has 'EGP' or 'ج.م'
             price = ""
-            if card_el:
-                try:
-                    card_text = card_el.evaluate("el => el.innerText")
-                    matches = re.findall(r"\b\d+(?:[.,]\d{1,2})?\b", card_text)
-                    for m in matches:
-                        val = float(m.replace(",", "."))
-                        if val > 1.0:
-                            price = m.replace(",", ".")
-                            break
-                except Exception:
-                    pass
+            # Selector for the main price container (contains whole, dot, decimals)
+            price_container = card.query_selector("div.flex.flex-col.justify-center.items-start")
+            
+            if price_container:
+                price_text = price_container.inner_text()
+                # Carrefour Egypt format: "34\n.\n99\nEGP"
+                # We want to find the first sequence of [digits] [.] [digits]
+                # Or just [digits] [digits]
+                num_parts = re.findall(r"\d+", price_text)
+                if len(num_parts) >= 2:
+                    # Take first two as whole and decimal
+                    price = f"{num_parts[0]}.{num_parts[1]}"
+                elif len(num_parts) == 1:
+                    price = num_parts[0]
 
-            # Discount
+            # 3. Discount & Badge
             discount = ""
-            if card_el:
-                try:
-                    card_text2 = card_el.evaluate("el => el.innerText")
-                    disc_match = re.search(
-                        r"\u062e\u0635\u0645\s*\d+%?|\d+%\s*\u062e\u0635\u0645|Save\s*\d+%?",
-                        card_text2,
-                    )
-                    if disc_match:
-                        discount = disc_match.group(0).strip()
-                except Exception:
-                    pass
+            badge_el = card.query_selector("div[class*='badge'], span[class*='discount']")
+            if badge_el:
+                discount = badge_el.inner_text().strip()
 
-            # Image
+            # 4. Image
             image_url = ""
-            if img_link:
-                try:
-                    img_el = img_link.query_selector("img")
-                    if img_el:
-                        image_url = img_el.get_attribute("src") or ""
-                except Exception:
-                    pass
+            img_el = card.query_selector("img")
+            if img_el:
+                image_url = img_el.get_attribute("src") or ""
 
-            if discount:
-                product_name = f"{product_name} ({discount})"
+            # Check if name contains weight info we should append
+            # (Carrefour often puts weight in a sibling element .text-xs.text-gray-500)
+            weight_el = card.query_selector(".text-xs.text-gray-500")
+            if weight_el:
+                w_text = weight_el.inner_text().strip()
+                if w_text and w_text not in product_name:
+                    product_name = f"{product_name} ({w_text})"
 
             data.append([
                 main_category,
@@ -299,15 +261,15 @@ def get_sub_buttons(page):
 def main():
     categories = {
         "Fresh Foods":            "https://www.carrefouregypt.com/mafegy/ar/c/FEGY1600000",
+        "Supermarket":            "https://www.carrefouregypt.com/mafegy/ar/c/FEGY1700000",
         "Vegetables & Fruits":    "https://www.carrefouregypt.com/mafegy/ar/c/FEGY1660000",
         "Dairy products & eggs":  "https://www.carrefouregypt.com/mafegy/ar/c/FEGY1630000",
-        "Supermarket":            "https://www.carrefouregypt.com/mafegy/ar/c/FEGY1700000",
         "Beverages":              "https://www.carrefouregypt.com/mafegy/ar/c/FEGY1500000",
-        "Baby Products":          "https://www.carrefouregypt.com/mafegy/ar/c/FEGY1000000",
         "Frozen Foods":           "https://www.carrefouregypt.com/mafegy/ar/c/FEGY6000000",
         "Organic & Health Foods": "https://www.carrefouregypt.com/mafegy/ar/c/FEGY1200000",
         "Bakery":                 "https://www.carrefouregypt.com/mafegy/ar/c/FEGY1610000",
         "Cleaning Tools":         "https://www.carrefouregypt.com/mafegy/ar/c/NFEGY3000000",
+        "Baby Products":          "https://www.carrefouregypt.com/mafegy/ar/c/FEGY1000000",
         "School Supplies":        "https://www.carrefouregypt.com/mafegy/ar/c/NFEGY1300000",
     }
 
